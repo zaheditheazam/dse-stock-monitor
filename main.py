@@ -1,4 +1,3 @@
-
 import os
 import re
 import requests
@@ -11,6 +10,7 @@ PDF_FILE = "portfolio.pdf"
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
 
 
 # -----------------------------
@@ -26,7 +26,10 @@ def extract_portfolio():
         text = ""
 
         for page in pdf.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+
+            if page_text:
+                text += page_text + "\n"
 
 
     lines = text.split("\n")
@@ -34,30 +37,30 @@ def extract_portfolio():
 
     for line in lines:
 
-        # stock format example:
-        # APEXFOOT A 420 420 210.27
-
         match = re.search(
             r"([A-Z0-9]+)\s+[A-Z]\s+([\d,]+)\s+[\d,]+\s+([\d.]+)",
             line
         )
 
+
         if match:
 
             symbol = match.group(1)
 
-            qty = int(
-                match.group(2).replace(",","")
+            quantity = int(
+                match.group(2).replace(",", "")
             )
 
-            avg = float(match.group(3))
+            average = float(
+                match.group(3)
+            )
 
 
             stocks.append(
                 {
-                    "symbol":symbol,
-                    "quantity":qty,
-                    "avg":avg
+                    "symbol": symbol,
+                    "quantity": quantity,
+                    "avg": average
                 }
             )
 
@@ -66,15 +69,20 @@ def extract_portfolio():
 
 
 
+
 # -----------------------------
-# DSE Price
+# DSE Current Price
 # -----------------------------
 
 def get_dse_price(symbol):
 
     try:
 
-        url = f"https://www.dsebd.org/latest_share_price_scroll_l.php"
+        url = (
+            "https://www.dsebd.org/"
+            "latest_share_price_scroll_l.php"
+        )
+
 
         r = requests.get(
             url,
@@ -84,31 +92,44 @@ def get_dse_price(symbol):
             }
         )
 
+
         soup = BeautifulSoup(
             r.text,
             "html.parser"
         )
 
 
-        text=soup.get_text(" ")
+        text = soup.get_text(" ")
 
-        pattern = rf"{symbol}\s+([\d.]+)"
 
-        result=re.search(
+        pattern = (
+            rf"{symbol}\s+([\d.]+)"
+        )
+
+
+        result = re.search(
             pattern,
             text
         )
 
 
         if result:
-            return float(result.group(1))
+
+            return float(
+                result.group(1)
+            )
 
 
     except Exception as e:
-        print(e)
+
+        print(
+            "Price error:",
+            e
+        )
 
 
     return None
+
 
 
 
@@ -118,13 +139,18 @@ def get_dse_price(symbol):
 
 def get_dse_news(stock_list):
 
-    news={}
+    news = {}
+
 
     try:
 
-        url="https://www.dsebd.org/display_news.php"
+        url = (
+            "https://www.dsebd.org/"
+            "display_news.php"
+        )
 
-        r=requests.get(
+
+        r = requests.get(
             url,
             timeout=20,
             headers={
@@ -133,36 +159,46 @@ def get_dse_news(stock_list):
         )
 
 
-        soup=BeautifulSoup(
+        soup = BeautifulSoup(
             r.text,
             "html.parser"
         )
 
 
-        text=soup.get_text("\n")
+        text = soup.get_text("\n")
 
 
         for stock in stock_list:
 
-            matches=[]
+
+            matches = []
+
 
             for line in text.split("\n"):
 
+
                 if stock in line.upper():
 
-                    matches.append(
-                        line.strip()
-                    )
+                    if len(line.strip()) > 3:
+
+                        matches.append(
+                            line.strip()
+                        )
+
 
 
             if matches:
 
-                news[stock]=matches
+                news[stock] = matches
+
 
 
     except Exception as e:
 
-        print(e)
+        print(
+            "News error:",
+            e
+        )
 
 
     return news
@@ -176,14 +212,18 @@ def get_dse_news(stock_list):
 
 def send_telegram(message):
 
-    url=f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_TOKEN}/sendMessage"
+    )
 
 
     requests.post(
         url,
         data={
-            "chat_id":TELEGRAM_CHAT_ID,
-            "text":message
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message
         }
     )
 
@@ -195,14 +235,15 @@ def send_telegram(message):
 # Main
 # -----------------------------
 
-
 def main():
 
 
-    print("Loading Portfolio...")
+    print(
+        "Loading Portfolio..."
+    )
 
 
-    portfolio=extract_portfolio()
+    portfolio = extract_portfolio()
 
 
     print(
@@ -211,33 +252,41 @@ def main():
     )
 
 
-    symbols=[
+    symbols = [
         x["symbol"]
         for x in portfolio
     ]
 
 
-    news=get_dse_news(symbols)
-
-
-
-    message="📊 DSE Portfolio Monitor\n"
-    message+=datetime.now().strftime(
-        "%d-%b-%Y %I:%M %p"
+    news = get_dse_news(
+        symbols
     )
-    message+="\n\n"
 
 
 
-    gainers=[]
-    losers=[]
+    message = (
+        "📊 DSE Portfolio Monitor\n"
+    )
+
+
+    message += (
+        datetime.now()
+        .strftime("%d-%b-%Y %I:%M %p")
+    )
+
+
+    message += "\n\n"
+
+
+
+    gain_more_than_5 = []
 
 
 
     for stock in portfolio:
 
 
-        price=get_dse_price(
+        price = get_dse_price(
             stock["symbol"]
         )
 
@@ -245,114 +294,139 @@ def main():
         if price:
 
 
-            current=price
-
-            investment=(
+            investment = (
                 stock["quantity"]
                 *
                 stock["avg"]
             )
 
 
-            value=(
+            current_value = (
                 stock["quantity"]
                 *
-                current
+                price
             )
 
 
-            profit=value-investment
+            profit = (
+                current_value
+                -
+                investment
+            )
 
 
-            percent=(
-                profit/investment*100
+            gain_percent = (
+                profit
+                /
+                investment
+                *
+                100
             )
 
 
 
-            if percent>=0:
-                gainers.append(
-                    (
-                    stock["symbol"],
-                    percent
-                    )
+            if gain_percent >= 5:
+
+
+                gain_more_than_5.append(
+                    {
+                        "stock":stock["symbol"],
+                        "avg":stock["avg"],
+                        "current":price,
+                        "gain":gain_percent
+                    }
                 )
 
-            else:
-                losers.append(
-                    (
-                    stock["symbol"],
-                    percent
-                    )
-                )
 
 
-            message+=(
-                f"{stock['symbol']}\n"
-                f"Qty: {stock['quantity']}\n"
-                f"Buy: {stock['avg']}\n"
-                f"Current: {current}\n"
-                f"P/L: {profit:,.2f} "
-                f"({percent:.2f}%)\n\n"
+
+
+    # Only show >5% gain stocks
+
+    message += (
+        "📈 Stocks Gain More Than 5%\n\n"
+    )
+
+
+    if gain_more_than_5:
+
+
+        for x in sorted(
+            gain_more_than_5,
+            key=lambda a:a["gain"],
+            reverse=True
+        ):
+
+
+            message += (
+                f"{x['stock']}\n"
+                f"Average: {x['avg']}\n"
+                f"Current: {x['current']}\n"
+                f"Gain: +{x['gain']:.2f}%\n\n"
             )
 
 
+    else:
 
 
-    message+="\n📰 Portfolio News\n"
+        message += (
+            "No portfolio stock gained more than 5% today.\n"
+        )
 
 
-    found=False
+
+
+    # News
+
+    message += (
+        "\n📰 Portfolio News\n"
+    )
+
+
+    found = False
 
 
     for stock,items in news.items():
 
-        found=True
 
-        message+=f"\n{stock}\n"
+        found = True
 
-        for n in items[:3]:
 
-            message+=f"- {n}\n"
+        message += (
+            f"\n{stock}\n"
+        )
+
+
+        for item in items[:3]:
+
+            message += (
+                "- "
+                + item
+                + "\n"
+            )
+
 
 
     if not found:
 
-        message+="No portfolio stock news today.\n"
+        message += (
+            "No portfolio stock news today.\n"
+        )
 
 
 
-    message+="\n📈 Top Gainers\n"
-
-    for x in sorted(
-        gainers,
-        key=lambda a:a[1],
-        reverse=True
-    )[:5]:
-
-        message+=f"{x[0]} +{x[1]:.2f}%\n"
+    send_telegram(
+        message
+    )
 
 
-
-    message+="\n📉 Biggest Decliners\n"
-
-    for x in sorted(
-        losers,
-        key=lambda a:a[1]
-    )[:5]:
-
-        message+=f"{x[0]} {x[1]:.2f}%\n"
+    print(
+        "Telegram Sent"
+    )
 
 
 
-    send_telegram(message)
 
-
-
-    print("Telegram Sent")
-
-
-
-if __name__=="__main__":
+if __name__ == "__main__":
 
     main()
