@@ -13,70 +13,79 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 
-# -----------------------------
-# Extract Portfolio PDF
-# -----------------------------
+# =====================================
+# READ STOCK + AVERAGE COST FROM PDF
+# =====================================
 
 def extract_portfolio():
 
-    stocks = []
+    portfolio = []
+
 
     with pdfplumber.open(PDF_FILE) as pdf:
 
-        text = ""
+        full_text = ""
 
         for page in pdf.pages:
-            page_text = page.extract_text()
 
-            if page_text:
-                text += page_text + "\n"
+            txt = page.extract_text()
+
+            if txt:
+                full_text += txt + "\n"
 
 
-    lines = text.split("\n")
+
+    lines = full_text.split("\n")
+
 
 
     for line in lines:
 
+
+        # Example:
+        # FORTUNE 5700 16.44
+
         match = re.search(
-            r"([A-Z0-9]+)\s+[A-Z]\s+([\d,]+)\s+[\d,]+\s+([\d.]+)",
+            r"([A-Z0-9]+)\s+[\d,]+\s+([\d]+\.[\d]+)",
             line
         )
 
 
         if match:
 
-            symbol = match.group(1)
 
-            quantity = int(
-                match.group(2).replace(",", "")
+            stock = match.group(1).upper()
+
+
+            avg = float(
+                match.group(2)
             )
 
-            average = float(
-                match.group(3)
-            )
 
-
-            stocks.append(
+            portfolio.append(
                 {
-                    "symbol": symbol,
-                    "quantity": quantity,
-                    "avg": average
+                    "stock": stock,
+                    "average": avg
                 }
             )
 
 
-    return stocks
+
+    return portfolio
 
 
 
 
-# -----------------------------
-# DSE Current Price
-# -----------------------------
 
-def get_dse_price(symbol):
+# =====================================
+# GET LATEST DSE PRICE
+# =====================================
+
+def get_dse_price(stock):
+
 
     try:
+
 
         url = (
             "https://www.dsebd.org/"
@@ -84,48 +93,86 @@ def get_dse_price(symbol):
         )
 
 
-        r = requests.get(
+        response = requests.get(
+
             url,
-            timeout=20,
+
             headers={
-                "User-Agent":"Mozilla/5.0"
-            }
+                "User-Agent":
+                "Mozilla/5.0"
+            },
+
+            timeout=30
         )
+
 
 
         soup = BeautifulSoup(
-            r.text,
+
+            response.text,
+
             "html.parser"
+
         )
 
 
-        text = soup.get_text(" ")
+
+        tables = soup.find_all("table")
 
 
-        pattern = (
-            rf"{symbol}\s+([\d.]+)"
-        )
+
+        for table in tables:
 
 
-        result = re.search(
-            pattern,
-            text
-        )
+            rows = table.find_all("tr")
 
 
-        if result:
 
-            return float(
-                result.group(1)
-            )
+            for row in rows:
+
+
+                columns = [
+
+                    c.get_text(
+                        " ",
+                        strip=True
+                    )
+
+                    for c in row.find_all("td")
+
+                ]
+
+
+
+                if len(columns) > 3:
+
+
+                    code = columns[1].strip().upper()
+
+
+
+                    if code == stock.upper():
+
+
+                        price = (
+                            columns[2]
+                            .replace(",","")
+                        )
+
+
+                        return float(price)
+
 
 
     except Exception as e:
 
+
         print(
-            "Price error:",
+            "Price Error:",
+            stock,
             e
         )
+
 
 
     return None
@@ -133,16 +180,21 @@ def get_dse_price(symbol):
 
 
 
-# -----------------------------
-# DSE News
-# -----------------------------
 
-def get_dse_news(stock_list):
 
-    news = {}
+# =====================================
+# DSE NEWS
+# =====================================
+
+def get_news(stock_list):
+
+
+    result = {}
+
 
 
     try:
+
 
         url = (
             "https://www.dsebd.org/"
@@ -150,28 +202,37 @@ def get_dse_news(stock_list):
         )
 
 
+
         r = requests.get(
+
             url,
-            timeout=20,
+
             headers={
-                "User-Agent":"Mozilla/5.0"
-            }
+                "User-Agent":
+                "Mozilla/5.0"
+            },
+
+            timeout=30
+
         )
+
 
 
         soup = BeautifulSoup(
+
             r.text,
+
             "html.parser"
+
         )
+
 
 
         text = soup.get_text("\n")
 
 
+
         for stock in stock_list:
-
-
-            matches = []
 
 
             for line in text.split("\n"):
@@ -179,36 +240,34 @@ def get_dse_news(stock_list):
 
                 if stock in line.upper():
 
-                    if len(line.strip()) > 3:
-
-                        matches.append(
-                            line.strip()
-                        )
-
-
-
-            if matches:
-
-                news[stock] = matches
+                    result.setdefault(
+                        stock,
+                        []
+                    ).append(
+                        line.strip()
+                    )
 
 
 
     except Exception as e:
 
+
         print(
-            "News error:",
+            "News Error:",
             e
         )
 
 
-    return news
+
+    return result
 
 
 
 
-# -----------------------------
-# Telegram
-# -----------------------------
+
+# =====================================
+# TELEGRAM
+# =====================================
 
 def send_telegram(message):
 
@@ -220,20 +279,28 @@ def send_telegram(message):
 
 
     requests.post(
+
         url,
+
         data={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message
+
+            "chat_id":
+            TELEGRAM_CHAT_ID,
+
+            "text":
+            message
+
         }
+
     )
 
 
 
 
 
-# -----------------------------
-# Main
-# -----------------------------
+# =====================================
+# MAIN
+# =====================================
 
 def main():
 
@@ -243,7 +310,9 @@ def main():
     )
 
 
+
     portfolio = extract_portfolio()
+
 
 
     print(
@@ -252,172 +321,141 @@ def main():
     )
 
 
-    symbols = [
-        x["symbol"]
-        for x in portfolio
-    ]
 
-
-    news = get_dse_news(
-        symbols
-    )
+    gain_stocks = []
 
 
 
-    message = (
-        "📊 DSE Portfolio Monitor\n"
-    )
-
-
-    message += (
-        datetime.now()
-        .strftime("%d-%b-%Y %I:%M %p")
-    )
-
-
-    message += "\n\n"
-
-
-
-    gain_more_than_5 = []
-
-
-
-    for stock in portfolio:
+    for item in portfolio:
 
 
         price = get_dse_price(
-            stock["symbol"]
+
+            item["stock"]
+
         )
+
+
+
+        print(
+            item["stock"],
+            price
+        )
+
 
 
         if price:
 
 
-            investment = (
-                stock["quantity"]
-                *
-                stock["avg"]
-            )
+            gain = (
 
+                (
+                    price
+                    -
+                    item["average"]
+                )
 
-            current_value = (
-                stock["quantity"]
-                *
-                price
-            )
-
-
-            profit = (
-                current_value
-                -
-                investment
-            )
-
-
-            gain_percent = (
-                profit
                 /
-                investment
-                *
-                100
-            )
+
+                item["average"]
+
+            ) * 100
 
 
 
-            if gain_percent >= 5:
+            if gain >= 5:
 
 
-                gain_more_than_5.append(
+                gain_stocks.append(
+
                     {
-                        "stock":stock["symbol"],
-                        "avg":stock["avg"],
-                        "current":price,
-                        "gain":gain_percent
+
+                    "stock":
+                    item["stock"],
+
+                    "average":
+                    item["average"],
+
+                    "price":
+                    price,
+
+                    "gain":
+                    gain
+
                     }
+
                 )
 
 
 
 
+    message = (
 
-    # Only show >5% gain stocks
+        "📊 DSE Portfolio Monitor\n"
+
+        +
+
+        datetime.now()
+        .strftime(
+            "%d-%b-%Y %I:%M %p"
+        )
+
+        +
+
+        "\n\n"
+
+    )
+
+
 
     message += (
         "📈 Stocks Gain More Than 5%\n\n"
     )
 
 
-    if gain_more_than_5:
+
+    if gain_stocks:
 
 
         for x in sorted(
-            gain_more_than_5,
-            key=lambda a:a["gain"],
+
+            gain_stocks,
+
+            key=lambda y:y["gain"],
+
             reverse=True
+
         ):
 
 
             message += (
+
                 f"{x['stock']}\n"
-                f"Average: {x['avg']}\n"
-                f"Current: {x['current']}\n"
+
+                f"Average Cost: {x['average']}\n"
+
+                f"Current Price: {x['price']}\n"
+
                 f"Gain: +{x['gain']:.2f}%\n\n"
+
             )
+
 
 
     else:
 
 
         message += (
-            "No portfolio stock gained more than 5% today.\n"
+
+            "No portfolio stock gained more than 5%."
+
         )
 
 
 
 
-    # News
+    send_telegram(message)
 
-    message += (
-        "\n📰 Portfolio News\n"
-    )
-
-
-    found = False
-
-
-    for stock,items in news.items():
-
-
-        found = True
-
-
-        message += (
-            f"\n{stock}\n"
-        )
-
-
-        for item in items[:3]:
-
-            message += (
-                "- "
-                + item
-                + "\n"
-            )
-
-
-
-    if not found:
-
-        message += (
-            "No portfolio stock news today.\n"
-        )
-
-
-
-    send_telegram(
-        message
-    )
 
 
     print(
